@@ -1,52 +1,61 @@
 import re
-from flask import Flask, render_template, request
-import pandas as pd
+import joblib
 import numpy as np
-from sentence_transformers import SentenceTransformer
+import pandas as pd
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
-# from sklearn.metrics.pairwise import cosine_similarity
-model = SentenceTransformer('all-MiniLM-L6-v2')
+from sklearn.metrics.pairwise import cosine_similarity
+from flask import Flask, render_template, request
+
 app = Flask(__name__)
 
-# convert string to float32
-def convert_to_float32(embedding_str):
-    # Remove square brackets and split by space
-    embedding_values = embedding_str[1:-1].split()
+model_path = r'model/sentence_transformer_model.joblib'
+# Load the model using joblib
+model = joblib.load(model_path)
 
-    # Convert string values to float
-    embedding_values = [float(value) for value in embedding_values]
+print("Model loaded successfully from", model_path)
+print(model)
 
-    # Convert to numpy array
-    embedding_array = np.array(embedding_values)
+# Load Embedding
+def load_embedding(file_path):
 
-    # Convert data type to numpy.float32
-    embedding_array = embedding_array.astype(np.float32)
+    # Load the embeddings array from the binary file
+    loaded_embeddings_array = np.load(file_path)
 
-    return embedding_array
+    # Now you can use the loaded_embeddings_array as needed
+    print("Embeddings array loaded successfully from:", file_path)
+    return loaded_embeddings_array
 
-# Load Subtitle Embedding
-def load_data(path):
-    data = pd.read_csv(path)
-    return data['name'], data['embedding'].apply(convert_to_float32)
+file_path = r"subtitles data/embeddings.npy"
+embeddings = load_embedding(file_path)
+print(type(embeddings), type(embeddings[0]), type(embeddings[0][0]))
 
-# path = r"D:\Search Engine Data\final_embedding_subtitles.csv"
-# name, embedding = load_data(path)
-# print(type(name), type(embedding), type(embedding[0]))
+# Load the TV-shows and movie name
+def load_name(file_path):
+    name = pd.read_csv(file_path)
 
-# Clearn Input data
-def clean_input(subtitle):
+    # Now you can use the loaded_embeddings_array as needed
+    print("Movie name loaded successfully from:", file_path)
+
+    return name
+    
+file_path = r"subtitles data/tv_movie_names.csv"
+name = load_name(file_path)
+print(type(name))
+
+# Clean Input data and embedded the data
+def clean_and_embedd_subtitle(query):
     # Remove timestamp and special characters
-    subtitle = re.sub(r'<[^>]*>', '', subtitle)  # Remove HTML tags
-    subtitle = re.sub(r'\r\n', ' ', subtitle)  # Replace newlines with spaces
-    subtitle = re.sub(r'[^a-zA-Z\s]', '', subtitle)  # Remove non-alphabetic characters
-    subtitle = re.sub(r'\s+', ' ', subtitle).strip() # Remove extra spaces
+    query = re.sub(r'<[^>]*>', '', query)  # Remove HTML tags
+    query = re.sub(r'\r\n', ' ', query)  # Replace newlines with spaces
+    query = re.sub(r'[^a-zA-Z\s]', '', query)  # Remove non-alphabetic characters
+    query = re.sub(r'\s+', ' ', query).strip() # Remove extra spaces
 
     # Convert to lowercase
-    subtitle = subtitle.lower()
+    query = query.lower()
 
     # Tokenization
-    words = word_tokenize(subtitle)
+    words = word_tokenize(query)
 
     # Lemmatization
     lemmatizer = WordNetLemmatizer()
@@ -54,44 +63,23 @@ def clean_input(subtitle):
 
     # Join tokens back into a single string
     cleaned_subtitle = ' '.join(words)
-    return cleaned_subtitle
+    emb_query = model.encode(cleaned_subtitle)
+    return emb_query
 
-def embedding_input(query):
-    return model.encode(query)
+# perform the cosine similarity
+def similarity_finder(search_query, k, emb):
 
-"""# Load pre-trained SentenceTransformer model
-model_distilbert = SentenceTransformer('all-MiniLM-L6-v2')
+    # Calculate cosine similarity between the query and the documents
+    similarity_scores = cosine_similarity(search_query, emb)
 
-# Load the subtitle data
-subset_df = pd.read_csv('embedding.csv', nrows=100)
+    # Sort the similarity scores and get the indices of most similar documents
+    similar_doc_indices = similarity_scores.argsort()[0][::-1][:min(k, len(name))]
 
-# Encode subtitles in batches
-batch_size = 32
-num_subtitles = len(subset_df)
-subtitle_embeddings = []
-for i in range(0, num_subtitles, batch_size):
-    batch_subtitles = subset_df['clean_text_lemma'].iloc[i:i+batch_size].values
-    batch_embeddings = model_distilbert.encode(batch_subtitles)
-    subtitle_embeddings.append(batch_embeddings)
+    # Retrieve and return the most similar documents
+    similar_texts = [name['name'].iloc[i] for i in similar_doc_indices]
 
-# Concatenate batch embeddings into a single array
-subtitle_embeddings = np.concatenate(subtitle_embeddings)"""
+    return similar_texts
 
-"""
-# Function to perform semantic search
-def semantic_search(query, top_n=5):
-    # Encode the query using the SentenceTransformer model
-    query_embedding = model_distilbert.encode([query])[0]
-
-    # Calculate cosine similarity between the query embedding and all subtitle embeddings
-    similarities = cosine_similarity([query_embedding], subtitle_embeddings)[0]
-
-    # Get indices of top N most similar subtitles
-    top_indices = similarities.argsort()[-top_n:][::-1]
-
-    # Return the top N most similar subtitles
-    return subset_df['name'].iloc[top_indices].tolist()
-"""
 ########################################################################################################
 @app.route('/')
 def index():
@@ -100,12 +88,11 @@ def index():
 @app.route('/search', methods=['POST'])
 def search():
     query = request.form['query']
-    query = clean_input(query)
-    embed_query = embedding_input(query)
-    print(type(embed_query), type(embed_query[0]))
-    
+    emb_query = clean_and_embedd_subtitle(query)
+    print(type(emb_query), type(emb_query[0]))
+    similar_text = similarity_finder([emb_query], 10, embeddings)  # Get up to 10 most similar documents
 
-    return render_template('results.html', results=results)
-####################################################################################################################
+    return render_template('results.html', results=similar_text)
+#######################################################################################################
 if __name__ == '__main__':
     app.run(debug=True)

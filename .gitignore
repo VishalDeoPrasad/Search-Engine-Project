@@ -1,1 +1,7 @@
-myenv
+# Ignore virtual environment directory
+myenv/
+
+# Ignore specific files
+subtitles_data/embeddings.npy
+subtitles_data/tv_movie_names.csv
+model/sentence_transformer_model.joblib

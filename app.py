@@ -2,15 +2,40 @@ import re
 from flask import Flask, render_template, request
 import pandas as pd
 import numpy as np
-#from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer
 from nltk.tokenize import word_tokenize
 from nltk.stem import WordNetLemmatizer
 # from sklearn.metrics.pairwise import cosine_similarity
-#model_distilbert = SentenceTransformer('all-MiniLM-L6-v2')
+model = SentenceTransformer('all-MiniLM-L6-v2')
 app = Flask(__name__)
 
+# convert string to float32
+def convert_to_float32(embedding_str):
+    # Remove square brackets and split by space
+    embedding_values = embedding_str[1:-1].split()
+
+    # Convert string values to float
+    embedding_values = [float(value) for value in embedding_values]
+
+    # Convert to numpy array
+    embedding_array = np.array(embedding_values)
+
+    # Convert data type to numpy.float32
+    embedding_array = embedding_array.astype(np.float32)
+
+    return embedding_array
+
+# Load Subtitle Embedding
+def load_data(path):
+    data = pd.read_csv(path)
+    return data['name'], data['embedding'].apply(convert_to_float32)
+
+# path = r"D:\Search Engine Data\final_embedding_subtitles.csv"
+# name, embedding = load_data(path)
+# print(type(name), type(embedding), type(embedding[0]))
+
 # Clearn Input data
-def clean_input(query):
+def clean_input(subtitle):
     # Remove timestamp and special characters
     subtitle = re.sub(r'<[^>]*>', '', subtitle)  # Remove HTML tags
     subtitle = re.sub(r'\r\n', ' ', subtitle)  # Replace newlines with spaces
@@ -32,7 +57,7 @@ def clean_input(query):
     return cleaned_subtitle
 
 def embedding_input(query):
-    pass
+    return model.encode(query)
 
 """# Load pre-trained SentenceTransformer model
 model_distilbert = SentenceTransformer('all-MiniLM-L6-v2')
@@ -67,7 +92,7 @@ def semantic_search(query, top_n=5):
     # Return the top N most similar subtitles
     return subset_df['name'].iloc[top_indices].tolist()
 """
-
+########################################################################################################
 @app.route('/')
 def index():
     return render_template('index.html')
@@ -75,22 +100,12 @@ def index():
 @app.route('/search', methods=['POST'])
 def search():
     query = request.form['query']
-    #query = clean_input(query)
-    results = [
-        'operation.fortune.ruse.de.guerre.(2023).eng.1cd',
-        'operation.fortune.ruse.de.guerre.(2023).eng.1cd',
-        'survivors.remorse.s01.e03.how.to.build.a.brand.(2014).eng.1cd',
-        'queer.eye.s06.e05.crawzaddy.(2021).eng.1cd',
-        'tales.of.wells.fargo.s05.e20.the.hand.that.shook.the.hand.(1961).eng.1cd',
-        'survivors.remorse.s01.e03.how.to.build.a.brand.(2014).eng.1cd',
-        'nightingales.s02.e05.reach.for.the.sky.(1993).eng.1cd',
-        'operation.fortune.ruse.de.guerre.(2023).eng.1cd',
-        'magnum.p.i.s02.e19.may.the.best.one.win.(2020).eng.1cd',
-        'the.voice.s22.e23.live.semifinal.top.8.eliminations.(2022).eng.1cd'
-]
+    query = clean_input(query)
+    embed_query = embedding_input(query)
+    print(type(embed_query), type(embed_query[0]))
+    
 
-    #results = ["APPLE", "BoY", "CAT", "DOG", "ELEPHANT", "FISH", "GOAT", "HAT", "ICE", query]  #semantic_search(query)
     return render_template('results.html', results=results)
-
+####################################################################################################################
 if __name__ == '__main__':
     app.run(debug=True)
